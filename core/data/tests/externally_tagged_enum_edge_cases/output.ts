@@ -3,7 +3,7 @@ export interface NestedStruct {
 }
 
 /** Tests various edge cases */
-export type EdgeCaseEnum =
+export type EdgeCaseEnum = 
 	/** Empty variant */
 	| "Empty"
 	/** Optional string */

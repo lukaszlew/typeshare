@@ -4,7 +4,7 @@ export interface ItemValue {
 }
 
 /** Basic externally tagged enum */
-export type BasicExternalEnum =
+export type BasicExternalEnum = 
 	/** Unit variant */
 	| "Unit"
 	/** String variant */
