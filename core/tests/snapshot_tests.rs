@@ -703,4 +703,9 @@ tests! {
     }
     ];
 
+    // Tests for externally tagged enums
+    can_generate_externally_tagged_enum: [swift, kotlin, scala, typescript, go, python];
+    externally_tagged_enum_edge_cases: [typescript];
+    externally_tagged_enum_renaming: [typescript];
+
 }
