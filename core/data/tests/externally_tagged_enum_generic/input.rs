@@ -18,8 +18,8 @@ pub enum GenericExternalEnum<T, U> {
     /// Generic tuple variant with second type
     Second(U),
     
-    /// Mixed generic tuple variant
-    Mixed(T, U),
+    // Mixed variant removed - multiple unnamed types not supported
+    /* Mixed(T, U), */
     
     /// Generic struct variant
     Struct {
