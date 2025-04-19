@@ -16,3 +16,4 @@ export type EdgeCaseEnum =
 	| { StructArray: NestedStruct[] }
 	/** Complex nested structure */
 	| { Complex: { a: string; b?: number; c: NestedStruct[]; d?: string[] } };
+

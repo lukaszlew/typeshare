@@ -15,3 +15,4 @@ export type SpecificRenameEnum =
 	| "Regular"
 	| { custom_name: string }
 	| { custom_struct: { value: number } };
+
