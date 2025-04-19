@@ -681,7 +681,9 @@ pub enum RustEnum {
     ///
     /// An example of such an enum:
     ///
-    /// ```
+    /// ```ignore
+    /// struct AssociatedData { /* ... */ }
+    ///
     /// #[serde(tag = "type", content = "content")]
     /// enum AlgebraicEnum {
     ///     UnitVariant,
