@@ -1,32 +1,44 @@
-public struct NestedStruct: Codable, Hashable {
-	public var nested_field: String
+import Foundation
+
+public struct NestedStruct: Codable {
+	public let nested_field: String
 
 	public init(nested_field: String) {
 		self.nested_field = nested_field
 	}
 }
 
-/** Tests various edge cases */
-public enum EdgeCaseEnum: Codable, Hashable {
-	/** Empty variant */
+
+/// Generated type representing the anonymous struct variant `Complex` of the `EdgeCaseEnum` Rust enum
+public struct EdgeCaseEnumComplexInner: Codable {
+	public let a: String
+	public let b: Int32?
+	public let c: [NestedStruct]
+	public let d: [String]?
+
+	public init(a: String, b: Int32?, c: [NestedStruct], d: [String]?) {
+		self.a = a
+		self.b = b
+		self.c = c
+		self.d = d
+	}
+}
+/// Tests various edge cases
+public enum EdgeCaseEnum: Codable {
+	/// Empty variant
 	case empty
-	
-	/** Optional string */
-	case optionalString(String?)
-	
-	/** Optional nested struct */
-	case optionalNested(NestedStruct?)
-	
-	/** Array of values */
+	/// Optional string
+	case optionalString(String??)
+	/// Optional nested struct
+	case optionalNested(NestedStruct??)
+	/// Array of values
 	case array([Int32])
-	
-	/** Array of structs */
+	/// Array of structs
 	case structArray([NestedStruct])
-	
-	/** Complex nested structure */
-	case complex(Complex)
-	
-	public struct Complex: Codable, Hashable {
+	/// Complex nested structure
+	case complex(Struct)
+
+	public struct Struct: Codable, Hashable {
 		public var a: String
 		public var b: Int32?
 		public var c: [NestedStruct]
@@ -39,11 +51,11 @@ public enum EdgeCaseEnum: Codable, Hashable {
 			self.d = d
 		}
 	}
-	
+
 	private enum CodingKeys: String, CodingKey {
 		case type
 	}
-	
+
 	private enum TypeKeys: String, CodingKey {
 		case empty = "Empty"
 		case optionalString = "OptionalString"
@@ -52,7 +64,7 @@ public enum EdgeCaseEnum: Codable, Hashable {
 		case structArray = "StructArray"
 		case complex = "Complex"
 	}
-	
+
 	public init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		if let type = try? container.decodeNil(forKey: .type) {
@@ -70,27 +82,23 @@ public enum EdgeCaseEnum: Codable, Hashable {
 		}
 		
 		if let nestedContainer = try? decoder.container(keyedBy: TypeKeys.self) {
-			if let value = try? nestedContainer.decode(String?.self, forKey: .optionalString) {
+			if let value = try? nestedContainer.decode(String??.self, forKey: .optionalString) {
 				self = .optionalString(value)
 				return
 			}
-			
-			if let value = try? nestedContainer.decode(NestedStruct?.self, forKey: .optionalNested) {
+			if let value = try? nestedContainer.decode(NestedStruct??.self, forKey: .optionalNested) {
 				self = .optionalNested(value)
 				return
 			}
-			
 			if let value = try? nestedContainer.decode([Int32].self, forKey: .array) {
 				self = .array(value)
 				return
 			}
-			
 			if let value = try? nestedContainer.decode([NestedStruct].self, forKey: .structArray) {
 				self = .structArray(value)
 				return
 			}
-			
-			if let value = try? nestedContainer.decode(Complex.self, forKey: .complex) {
+			if let value = try? nestedContainer.decode(Struct.self, forKey: .complex) {
 				self = .complex(value)
 				return
 			}

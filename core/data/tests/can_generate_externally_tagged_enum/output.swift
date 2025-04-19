@@ -1,38 +1,47 @@
-/** Simple helper struct */
-public struct ItemValue: Codable, Hashable {
-	public var field: String
+import Foundation
+
+/// Simple helper struct
+public struct ItemValue: Codable {
+	public let field: String
 
 	public init(field: String) {
 		self.field = field
 	}
 }
 
-/** Basic externally tagged enum */
-public enum BasicExternalEnum: Codable, Hashable {
-	/** Unit variant */
+
+/// Generated type representing the anonymous struct variant `Struct` of the `BasicExternalEnum` Rust enum
+public struct BasicExternalEnumStructInner: Codable {
+	public let field1: String
+	public let field2: Int32
+
+	public init(field1: String, field2: Int32) {
+		self.field1 = field1
+		self.field2 = field2
+	}
+}
+/// Basic externally tagged enum
+public enum BasicExternalEnum: Codable {
+	/// Unit variant
 	case unit
-
-	/** String variant */
+	/// String variant
 	case string(String)
-
-	/** Number variant */
+	/// Number variant
 	case number(Int32)
-
-	/** Struct variant */
+	/// Struct variant
 	case `struct`(Struct)
-
-	/** Nested variant */
-	case nested(ItemValue)
 
 	public struct Struct: Codable, Hashable {
 		public var field1: String
 		public var field2: Int32
-
+		
 		public init(field1: String, field2: Int32) {
 			self.field1 = field1
 			self.field2 = field2
 		}
 	}
+	/// Nested variant
+	case nested(ItemValue)
 
 	private enum CodingKeys: String, CodingKey {
 		case type
@@ -52,38 +61,35 @@ public enum BasicExternalEnum: Codable, Hashable {
 			self = .unit
 			return
 		}
-
+		
 		let type = try decoder.singleValueContainer()
-
+		
 		if let value = try? type.decode(String.self) {
 			if value == "Unit" {
 				self = .unit
 				return
 			}
 		}
-
+		
 		if let nestedContainer = try? decoder.container(keyedBy: TypeKeys.self) {
 			if let value = try? nestedContainer.decode(String.self, forKey: .string) {
 				self = .string(value)
 				return
 			}
-
 			if let value = try? nestedContainer.decode(Int32.self, forKey: .number) {
 				self = .number(value)
 				return
 			}
-
-			if let value = try? nestedContainer.decode(Struct.self, forKey: .struct) {
-				self = .struct(value)
+			if let value = try? nestedContainer.decode(Struct.self, forKey: .`struct`) {
+				self = .`struct`(value)
 				return
 			}
-
 			if let value = try? nestedContainer.decode(ItemValue.self, forKey: .nested) {
 				self = .nested(value)
 				return
 			}
 		}
-
+		
 		throw DecodingError.dataCorrupted(
 			DecodingError.Context(
 				codingPath: decoder.codingPath,
@@ -91,10 +97,10 @@ public enum BasicExternalEnum: Codable, Hashable {
 			)
 		)
 	}
-
+	
 	public func encode(to encoder: Encoder) throws {
 		var container: KeyedEncodingContainer<TypeKeys>
-
+		
 		switch self {
 		case .unit:
 			var container = encoder.singleValueContainer()
@@ -106,9 +112,9 @@ public enum BasicExternalEnum: Codable, Hashable {
 		case .number(let value):
 			container = encoder.container(keyedBy: TypeKeys.self)
 			try container.encode(value, forKey: .number)
-		case .struct(let value):
+		case .`struct`(let value):
 			container = encoder.container(keyedBy: TypeKeys.self)
-			try container.encode(value, forKey: .struct)
+			try container.encode(value, forKey: .`struct`)
 		case .nested(let value):
 			container = encoder.container(keyedBy: TypeKeys.self)
 			try container.encode(value, forKey: .nested)
