@@ -267,6 +267,15 @@ impl Language for Kotlin {
                     generic_parameters
                 )?;
             }
+            RustEnum::ExternallyTagged { .. } => {
+                write!(
+                    w,
+                    "sealed class {}{}{} ",
+                    self.prefix,
+                    &e.shared().id.renamed,
+                    generic_parameters
+                )?;
+            }
             RustEnum::Algebraic { .. } => {
                 write!(
                     w,
@@ -322,6 +331,10 @@ impl Kotlin {
                         v.shared().id.renamed
                     )?;
                 }
+            }
+            RustEnum::ExternallyTagged { shared: _ } => {
+                // Not implemented yet
+                writeln!(w, "\t// Externally tagged enum implementation pending")?;
             }
             RustEnum::Algebraic {
                 content_key,

@@ -372,6 +372,17 @@ impl Language for Python {
                     })?
                 };
             }
+            RustEnum::ExternallyTagged { shared } => {
+                // Not implemented yet
+                self.add_import("pydantic".to_string(), "BaseModel".to_string());
+                writeln!(
+                    w,
+                    "# {} (Externally tagged enum - not implemented yet)",
+                    shared.id.renamed
+                )?;
+                writeln!(w, "class {}(BaseModel):", shared.id.renamed)?;
+                writeln!(w, "    pass")?;
+            }
             // Write all the algebraic variants out (all three variant types are possible
             // here)
             RustEnum::Algebraic {

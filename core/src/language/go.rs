@@ -276,6 +276,24 @@ impl Go {
         write_comments(w, 0, &e.shared().comments)?;
 
         match e {
+            RustEnum::ExternallyTagged { .. } => {
+                // Not implemented - focusing on TypeScript implementation
+                writeln!(
+                    w,
+                    "// NOTE: Externally tagged enum implementation removed to focus on TypeScript"
+                )?;
+                writeln!(w, "// Implementation will be added in a future change")?;
+
+                // For now, generate an empty struct as a placeholder
+                writeln!(w, "// TODO: Add full implementation")?;
+                writeln!(
+                    w,
+                    "type {} struct{{}}",
+                    self.acronyms_to_uppercase(&e.shared().id.original)
+                )?;
+
+                Ok(())
+            }
             RustEnum::Unit(shared) => {
                 writeln!(
                     w,

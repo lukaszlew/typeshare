@@ -427,12 +427,13 @@ impl Language for Swift {
 
         let shared = e.shared();
         let enum_name = swift_keyword_aware_rename(format!("{}{}", self.prefix, shared.id.renamed));
-        let always_present = match e {
+        let always_present = match *e {
             RustEnum::Unit(_) => ["String"]
                 .into_iter()
                 .chain(self.get_default_decorators())
                 .collect::<Vec<_>>(),
             RustEnum::Algebraic { .. } => self.get_default_decorators().collect::<Vec<_>>(),
+            RustEnum::ExternallyTagged { .. } => self.get_default_decorators().collect::<Vec<_>>(),
         };
         let decs = determine_decorators(&always_present, e).join(", ");
 
@@ -554,6 +555,17 @@ impl Swift {
         let mut coding_keys = Vec::new();
 
         match e {
+            RustEnum::ExternallyTagged { .. } => {
+                // Not implemented - focusing on TypeScript implementation
+                writeln!(w, "\t// NOTE: Externally tagged enum implementation removed to focus on TypeScript")?;
+                writeln!(w, "\t// Implementation will be added in a future change")?;
+                writeln!(w, "\tcase placeholder")?;
+
+                // Add basic placeholder coding info
+                coding_keys.push("placeholder".to_string());
+                decoding_cases.push("case _: self = .placeholder; return".to_string());
+                encoding_cases.push("case .placeholder: break".to_string());
+            }
             RustEnum::Unit(shared) => {
                 for v in &shared.variants {
                     let variant_name = v.shared().id.original.to_camel_case();

@@ -655,13 +655,34 @@ pub enum RustEnum {
     /// }
     /// ```
     Unit(RustEnumShared),
-    /// An algebraic enum
+    /// An externally tagged enum (default Serde format)
     ///
     /// An example of such an enum:
     ///
     /// ```
-    /// struct AssociatedData { /* ... */ }
+    /// enum ExternallyTaggedEnum {
+    ///     UnitVariant,
+    ///     TupleVariant(String),
+    ///     StructVariant {
+    ///         field: String,
+    ///     },
+    /// }
+    /// ```
     ///
+    /// Serializes to JSON as:
+    /// ```json
+    /// { "VariantName": associated_value }
+    /// ```
+    ExternallyTagged {
+        /// Shared context for this enum.
+        shared: RustEnumShared,
+    },
+    /// An algebraic enum (adjacently tagged)
+    ///
+    /// An example of such an enum:
+    ///
+    /// ```
+    /// #[serde(tag = "type", content = "content")]
     /// enum AlgebraicEnum {
     ///     UnitVariant,
     ///     TupleVariant(AssociatedData),
@@ -705,7 +726,9 @@ impl RustEnum {
     /// Get a reference to the inner shared content
     pub fn shared(&self) -> &RustEnumShared {
         match self {
-            Self::Unit(shared) | Self::Algebraic { shared, .. } => shared,
+            Self::Unit(shared)
+            | Self::ExternallyTagged { shared }
+            | Self::Algebraic { shared, .. } => shared,
         }
     }
 }

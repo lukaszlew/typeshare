@@ -43,6 +43,12 @@ pub fn reconcile_aliases(crate_parsed_data: &mut BTreeMap<CrateName, ParsedData>
                     &import_types,
                     &mut shared.variants,
                 ),
+                RustEnum::ExternallyTagged { shared } => check_variant(
+                    crate_name,
+                    &serde_renamed,
+                    &import_types,
+                    &mut shared.variants,
+                ),
                 RustEnum::Algebraic { shared, .. } => check_variant(
                     crate_name,
                     &serde_renamed,

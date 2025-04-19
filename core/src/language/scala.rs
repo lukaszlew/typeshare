@@ -209,6 +209,15 @@ impl Language for Scala {
                     shared.id.renamed, generic_parameters
                 )?;
             }
+            RustEnum::ExternallyTagged { shared: _ } => {
+                // Use e.shared() instead of shared to access the id
+                writeln!(
+                    w,
+                    "sealed trait {}{} {{",
+                    e.shared().id.renamed,
+                    generic_parameters
+                )?;
+            }
             RustEnum::Algebraic { shared, .. } => {
                 writeln!(
                     w,
@@ -237,6 +246,10 @@ impl Language for Scala {
 impl Scala {
     fn write_enum_variants(&mut self, w: &mut dyn Write, e: &RustEnum) -> std::io::Result<()> {
         match e {
+            RustEnum::ExternallyTagged { shared: _ } => {
+                // Not implemented yet
+                writeln!(w, "\t// Externally tagged enum implementation pending")?;
+            }
             RustEnum::Unit(shared) => {
                 for v in shared.variants.iter() {
                     self.write_comments(w, 1, &v.shared().comments)?;

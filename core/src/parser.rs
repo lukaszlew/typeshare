@@ -70,6 +70,8 @@ pub enum ParseError {
     SerdeTagNotAllowed { enum_ident: String },
     #[error("the serde content attribute is not supported for non-algebraic enums: {enum_ident}")]
     SerdeContentNotAllowed { enum_ident: String },
+    #[error("both serde tag and content attributes need to be specified for adjacently tagged enum {enum_ident}. e.g. #[serde(tag = \"type\", content = \"content\")]")]
+    SerdeTagAndContentRequired { enum_ident: String },
     #[error("serde tag attribute needs to be specified for algebraic enum {enum_ident}. e.g. #[serde(tag = \"type\", content = \"content\")]")]
     SerdeTagRequired { enum_ident: String },
     #[error("serde content attribute needs to be specified for algebraic enum {enum_ident}. e.g. #[serde(tag = \"type\", content = \"content\")]")]
@@ -402,18 +404,27 @@ pub(crate) fn parse_enum(e: &ItemEnum, target_os: &[String]) -> Result<RustItem,
     } else {
         // At least one enum variant is either a tuple or an anonymous struct
 
-        let tag_key = maybe_tag_key.ok_or_else(|| ParseError::SerdeTagRequired {
-            enum_ident: original_enum_ident.clone(),
-        })?;
-        let content_key = maybe_content_key.ok_or_else(|| ParseError::SerdeContentRequired {
-            enum_ident: original_enum_ident.clone(),
-        })?;
+        // We need to clone these to avoid ownership issues
+        let tag_key_clone = maybe_tag_key.clone();
+        let content_key_clone = maybe_content_key.clone();
 
-        Ok(RustItem::Enum(RustEnum::Algebraic {
-            tag_key,
-            content_key,
-            shared,
-        }))
+        // Check if both tag and content keys are provided
+        if let (Some(tag_key), Some(content_key)) = (tag_key_clone, content_key_clone) {
+            // This is an adjacently tagged enum
+            Ok(RustItem::Enum(RustEnum::Algebraic {
+                tag_key,
+                content_key,
+                shared,
+            }))
+        } else if maybe_tag_key.is_some() || maybe_content_key.is_some() {
+            // Only one of tag or content is provided, which is invalid for adjacently tagged enums
+            return Err(ParseError::SerdeTagAndContentRequired {
+                enum_ident: original_enum_ident.clone(),
+            });
+        } else {
+            // Neither tag nor content is provided, treat as externally tagged enum (default Serde format)
+            Ok(RustItem::Enum(RustEnum::ExternallyTagged { shared }))
+        }
     }
 }
 

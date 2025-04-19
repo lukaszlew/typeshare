@@ -65,7 +65,8 @@ fn get_enum_dependencies(
 ) {
     match enm {
         RustEnum::Unit(_) => {}
-        RustEnum::Algebraic {
+        RustEnum::ExternallyTagged { shared }
+        | RustEnum::Algebraic {
             tag_key: _,
             content_key: _,
             shared,
@@ -199,7 +200,8 @@ pub(crate) fn topsort(things: &mut [RustItem]) {
     let types = HashMap::from_iter(things.iter().map(|thing| {
         let id = match thing {
             RustItem::Enum(e) => match e {
-                RustEnum::Algebraic {
+                RustEnum::ExternallyTagged { shared }
+                | RustEnum::Algebraic {
                     tag_key: _,
                     content_key: _,
                     shared,

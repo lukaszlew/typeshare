@@ -227,6 +227,30 @@ export const ReplacerFunc = (key: string, value: unknown): unknown => {{
 
                 writeln!(w, "\n}}\n")
             }
+            RustEnum::ExternallyTagged { shared } => {
+                // Register this externally tagged enum type for custom JSON translation
+                // We'll mark it generically, and the actual type string will be matched
+                // by our heuristics in custom_translations
+                let type_name = format!("{}{}", shared.id.renamed, generic_parameters);
+                self.types_for_custom_json_translation
+                    .insert(type_name, BTreeSet::new());
+
+                write!(
+                    w,
+                    "export type {}{} = ",
+                    shared.id.renamed, generic_parameters
+                )?;
+
+                self.write_enum_variants(w, e)?;
+
+                write!(w, ";")?;
+                writeln!(w)?;
+
+                // Write helper functions for this externally tagged enum
+                self.write_externally_tagged_helpers(w, e)?;
+
+                writeln!(w)
+            }
             RustEnum::Algebraic { shared, .. } => {
                 write!(
                     w,
@@ -274,6 +298,37 @@ impl TypeScript {
                     write!(w, "\t{} = {:?},", shared.id.original, &shared.id.renamed)
                 }
                 _ => unreachable!(),
+            }),
+
+            // Write all the externally tagged variants out (all three variant types are possible here)
+            RustEnum::ExternallyTagged { shared } => shared.variants.iter().try_for_each(|v| {
+                writeln!(w)?;
+                self.write_comments(w, 1, &v.shared().comments)?;
+                match v {
+                    RustEnumVariant::Unit(shared) => write!(w, "\t| {:?}", shared.id.renamed),
+                    RustEnumVariant::Tuple { ty, shared } => {
+                        let r#type = self
+                            .format_type(ty, e.shared().generic_types.as_slice())
+                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                        write!(
+                            w,
+                            "\t| {{ {}{}: {} }}",
+                            shared.id.renamed,
+                            ty.is_optional().then_some("?").unwrap_or_default(),
+                            r#type
+                        )
+                    }
+                    RustEnumVariant::AnonymousStruct { fields, shared } => {
+                        writeln!(w, "\t| {{ {}: {{", shared.id.renamed)?;
+
+                        fields.iter().try_for_each(|f| {
+                            self.write_field(w, f, e.shared().generic_types.as_slice())
+                        })?;
+
+                        write!(w, "}}")?;
+                        write!(w, "}}")
+                    }
+                }
             }),
 
             // Write all the algebraic variants out (all three variant types are possible
@@ -409,7 +464,13 @@ impl TypeScript {
                 )
             });
 
-        let custom_translations = HashMap::from([(
+        // Check if this is an externally tagged enum by looking for enum types that don't match
+        // standard types. Externally tagged enums in TypeScript have a very specific pattern
+        // They contain a union type with string literals and/or objects with single properties
+        let is_externally_tagged =
+            ts_type.contains(" | ") && (ts_type.contains(" | \"") || ts_type.contains(" | {"));
+
+        let mut custom_translations = HashMap::from([(
             "Uint8Array",
             (
                 CustomJsonTranslationContent{
@@ -433,6 +494,58 @@ impl TypeScript {
                         }
                     )]);
 
+        // Add custom handling for externally tagged enums if needed
+        if is_externally_tagged {
+            custom_translations.insert(
+                ts_type,
+                CustomJsonTranslationContent {
+                    // For externally tagged enums, we need to handle both string variants and object variants
+                    reviver: r#"// Handle externally tagged enum
+if (typeof value === "string") {
+    // Unit variant
+    return value;
+} else if (typeof value === "object" && value !== null && Object.keys(value).length === 1) {
+    // Non-unit variant - handle possible nested values correctly
+    const key = Object.keys(value)[0];
+    const innerValue = value[key];
+    
+    if (innerValue === null) {
+        // Nullable tuple variant
+        return { [key]: null };
+    } else if (typeof innerValue === "object" && innerValue !== null) {
+        // Check if the inner value might also be an externally tagged enum
+        if (Object.keys(innerValue).length === 1) {
+            const innerKey = Object.keys(innerValue)[0];
+            if (typeof innerValue[innerKey] === "object" || typeof innerValue[innerKey] === "string") {
+                // Possibly a nested externally tagged enum, leave as is
+                return value;
+            }
+        }
+        // Just a regular object or array as part of this variant
+        return value;
+    } else {
+        // Simple value (string, number, boolean)
+        return value;
+    }
+}
+"#.to_owned(),
+                    replacer: r#"// Handle externally tagged enum
+if (typeof value === "string") {
+    // Unit variant
+    return value;
+} else if (typeof value === "object" && value !== null && Object.keys(value).length === 1) {
+    // Non-unit variant
+    const key = Object.keys(value)[0];
+    const innerValue = value[key];
+    
+    // Return the object as is, ensuring its structure is preserved for proper serialization
+    return value;
+}
+"#.to_owned(),
+                }
+            );
+        }
+
         custom_translations.get(ts_type).cloned()
     }
 }
@@ -442,4 +555,112 @@ fn typescript_property_aware_rename(name: &str) -> String {
         return format!("{:?}", name);
     }
     name.to_string()
+}
+
+impl TypeScript {
+    /// Write helper functions for an externally tagged enum
+    fn write_externally_tagged_helpers(
+        &mut self,
+        w: &mut dyn Write,
+        e: &RustEnum,
+    ) -> io::Result<()> {
+        if let RustEnum::ExternallyTagged { shared } = e {
+            let enum_name = &shared.id.renamed;
+
+            let generic_parameters = (!shared.generic_types.is_empty())
+                .then(|| format!("<{}>", shared.generic_types.join(", ")))
+                .unwrap_or_default();
+
+            // Generate variant type helpers for better type support
+            let mut variant_helpers = Vec::new();
+            for v in &shared.variants {
+                match v {
+                    RustEnumVariant::Unit(shared_unit) => {
+                        variant_helpers.push(format!(
+                            "    /**\n     * Type guard for checking if a value is the {variant} variant\n     */\n    export function is{pascal_variant}(value: {enum_name}{generic_params}): value is \"{variant}\" {{\n        return value === \"{variant}\";\n    }}\n\n    /**\n     * Create a {variant} variant\n     */\n    export function {camel_variant}(): {enum_name}{generic_params} {{\n        return \"{variant}\";\n    }}",
+                            variant = shared_unit.id.renamed,
+                            pascal_variant = shared_unit.id.original.to_pascal_case(),
+                            camel_variant = shared_unit.id.original.to_camel_case(),
+                            enum_name = enum_name,
+                            generic_params = generic_parameters
+                        ));
+                    }
+                    RustEnumVariant::Tuple {
+                        ty,
+                        shared: shared_tuple,
+                    } => {
+                        let r#type = self
+                            .format_type(ty, e.shared().generic_types.as_slice())
+                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                        variant_helpers.push(format!(
+                            "    /**\n     * Type guard for checking if a value is the {variant} variant\n     */\n    export function is{pascal_variant}(value: {enum_name}{generic_params}): value is {{ {variant}: {type} }} {{\n        return typeof value === \"object\" && value !== null && \"{variant}\" in value;\n    }}\n\n    /**\n     * Create a {variant} variant\n     */\n    export function {camel_variant}(value: {type}): {enum_name}{generic_params} {{\n        return {{ \"{variant}\": value }};\n    }}\n\n    /**\n     * Get the value from a {variant} variant\n     */\n    export function get{pascal_variant}(value: {{ {variant}: {type} }}): {type} {{\n        return value[\"{variant}\"];\n    }}",
+                            variant = shared_tuple.id.renamed,
+                            pascal_variant = shared_tuple.id.original.to_pascal_case(),
+                            camel_variant = shared_tuple.id.original.to_camel_case(),
+                            type = r#type,
+                            enum_name = enum_name,
+                            generic_params = generic_parameters
+                        ));
+                    }
+                    RustEnumVariant::AnonymousStruct {
+                        fields: _,
+                        shared: shared_struct,
+                    } => {
+                        // For anonymous struct variants, we'll add a more generic helper
+                        variant_helpers.push(format!(
+                            "    /**\n     * Type guard for checking if a value is the {variant} variant\n     */\n    export function is{pascal_variant}(value: {enum_name}{generic_params}): value is {{ {variant}: any }} {{\n        return typeof value === \"object\" && value !== null && \"{variant}\" in value;\n    }}",
+                            variant = shared_struct.id.renamed,
+                            pascal_variant = shared_struct.id.original.to_pascal_case(),
+                            enum_name = enum_name,
+                            generic_params = generic_parameters
+                        ));
+                    }
+                }
+            }
+
+            // Generate a namespace with helper functions for the externally tagged enum
+            writeln!(
+                w,
+                r#"
+/**
+ * Helper functions for {enum_name} externally tagged enum
+ */
+export namespace {enum_name} {{
+    /**
+     * Type guard for checking if a value is a unit variant of {enum_name}
+     */
+    export function isUnitVariant(value: {enum_name}{generic_params}): value is string {{
+        return typeof value === "string";
+    }}
+    
+    /**
+     * Type guard for checking if a value has a specific variant
+     */
+    export function hasVariant<K extends string>(value: {enum_name}{generic_params}, variant: K): value is Record<K, any> {{
+        return typeof value === "object" && value !== null && variant in value;
+    }}
+    
+    /**
+     * Parse a JSON string into an {enum_name}
+     */
+    export function fromJSON(json: string): {enum_name}{generic_params} {{
+        return JSON.parse(json);
+    }}
+    
+    /**
+     * Convert an {enum_name} to a JSON string
+     */
+    export function toJSON(value: {enum_name}{generic_params}): string {{
+        return JSON.stringify(value);
+    }}
+
+{variant_helpers}
+}}"#,
+                enum_name = enum_name,
+                generic_params = generic_parameters,
+                variant_helpers = variant_helpers.join("\n\n")
+            )?;
+        }
+        Ok(())
+    }
 }
