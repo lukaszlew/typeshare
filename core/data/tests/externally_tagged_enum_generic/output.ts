@@ -4,7 +4,7 @@ export interface Container<T> {
 }
 
 /** Generic externally tagged enum */
-export type GenericExternalEnum<T, U> = 
+export type GenericExternalEnum<T, U> =
 	/** Unit variant */
 	| "Unit"
 	/** Generic tuple variant with first type */

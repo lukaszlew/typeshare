@@ -230,7 +230,7 @@ export const ReplacerFunc = (key: string, value: unknown): unknown => {{
             RustEnum::ExternallyTagged { shared } => {
                 write!(
                     w,
-                    "export type {}{} = ",
+                    "export type {}{} =",
                     shared.id.renamed, generic_parameters
                 )?;
 
@@ -244,7 +244,7 @@ export const ReplacerFunc = (key: string, value: unknown): unknown => {{
             RustEnum::Algebraic { shared, .. } => {
                 write!(
                     w,
-                    "export type {}{} = ",
+                    "export type {}{} =",
                     shared.id.renamed, generic_parameters
                 )?;
 

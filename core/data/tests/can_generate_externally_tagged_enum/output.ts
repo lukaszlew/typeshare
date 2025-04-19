@@ -12,6 +12,6 @@ export type BasicExternalEnum =
 	/** Number variant */
 	| { Number: number }
 	/** Struct variant */
-	| { Struct: { field1: string; field2: number; } }
+	| { Struct: { field1: string; field2: number } }
 	/** Nested variant */
 	| { Nested: ItemValue };

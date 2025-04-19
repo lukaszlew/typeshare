@@ -7,12 +7,12 @@ export type EdgeCaseEnum =
 	/** Empty variant */
 	| "Empty"
 	/** Optional string */
-	| { OptionalString: string | null }
+	| { OptionalString?: string }
 	/** Optional nested struct */
-	| { OptionalNested: NestedStruct | null }
+	| { OptionalNested?: NestedStruct }
 	/** Array of values */
 	| { Array: number[] }
 	/** Array of structs */
 	| { StructArray: NestedStruct[] }
 	/** Complex nested structure */
-	| { Complex: { a: string; b: number | null; c: NestedStruct[]; d: string[] | null; } };
+	| { Complex: { a: string; b?: number; c: NestedStruct[]; d?: string[] } };
