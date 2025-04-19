@@ -704,9 +704,9 @@ tests! {
     ];
 
     // Tests for externally tagged enums (only TypeScript implementation for now)
-    can_generate_externally_tagged_enum: [typescript];
-    externally_tagged_enum_edge_cases: [typescript];
-    externally_tagged_enum_renaming: [typescript];
-    externally_tagged_enum_generic: [typescript];
+    can_generate_externally_tagged_enum: [swift, typescript];
+    externally_tagged_enum_edge_cases: [swift, typescript];
+    externally_tagged_enum_renaming: [swift, typescript];
+    externally_tagged_enum_generic: [swift, typescript];
 
 }

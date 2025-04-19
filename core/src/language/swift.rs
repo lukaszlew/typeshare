@@ -433,7 +433,7 @@ impl Language for Swift {
                 .chain(self.get_default_decorators())
                 .collect::<Vec<_>>(),
             RustEnum::Algebraic { .. } => self.get_default_decorators().collect::<Vec<_>>(),
-            RustEnum::ExternallyTagged { .. } => self.get_default_decorators().collect::<Vec<_>>(),
+            RustEnum::ExternallyTagged { .. } => vec![CODABLE],
         };
         let decs = determine_decorators(&always_present, e).join(", ");
 
@@ -555,16 +555,341 @@ impl Swift {
         let mut coding_keys = Vec::new();
 
         match e {
-            RustEnum::ExternallyTagged { .. } => {
-                // Not implemented - focusing on TypeScript implementation
-                writeln!(w, "\t// NOTE: Externally tagged enum implementation removed to focus on TypeScript")?;
-                writeln!(w, "\t// Implementation will be added in a future change")?;
-                writeln!(w, "\tcase placeholder")?;
+            RustEnum::ExternallyTagged { shared } => {
+                // Create coding keys for each variant and build the type keys enum
+                let mut type_keys = Vec::new();
 
-                // Add basic placeholder coding info
-                coding_keys.push("placeholder".to_string());
-                decoding_cases.push("case _: self = .placeholder; return".to_string());
-                encoding_cases.push("case .placeholder: break".to_string());
+                for v in &shared.variants {
+                    let variant_name = v.shared().id.original.to_camel_case();
+                    let variant_renamed = &v.shared().id.renamed;
+
+                    self.write_comments(w, 1, &v.shared().comments)?;
+
+                    // For each variant, write the Swift case definition
+                    match v {
+                        RustEnumVariant::Unit(_) => {
+                            writeln!(w, "\tcase {}", swift_keyword_aware_rename(&variant_name))?;
+                            type_keys.push(format!(
+                                r##"{} = "{}""##,
+                                swift_keyword_aware_rename(&variant_name),
+                                variant_renamed
+                            ));
+                        }
+                        RustEnumVariant::Tuple { ty, .. } => {
+                            let case_type = self
+                                .format_type(ty, e.shared().generic_types.as_slice())
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+                            writeln!(
+                                w,
+                                "\tcase {}({}{})",
+                                swift_keyword_aware_rename(&variant_name),
+                                swift_keyword_aware_rename(&case_type),
+                                ty.is_optional().then_some("?").unwrap_or_default()
+                            )?;
+
+                            type_keys.push(format!(
+                                r##"{} = "{}""##,
+                                swift_keyword_aware_rename(&variant_name),
+                                variant_renamed
+                            ));
+                        }
+                        RustEnumVariant::AnonymousStruct { fields, shared: _ } => {
+                            // Use the same naming convention as elsewhere in the codebase
+                            let struct_name = format!("Struct");
+
+                            // Write the case using the variant name
+                            writeln!(
+                                w,
+                                "\tcase {}({})",
+                                swift_keyword_aware_rename(&variant_name),
+                                struct_name
+                            )?;
+
+                            type_keys.push(format!(
+                                r##"{} = "{}""##,
+                                swift_keyword_aware_rename(&variant_name),
+                                variant_renamed
+                            ));
+
+                            // We'll generate the anonymous struct later as a separate type
+                            // But also add an inline struct definition to match existing patterns
+                            writeln!(w, "\n\tpublic struct {}: Codable, Hashable {{", struct_name)?;
+
+                            for f in fields {
+                                self.write_comments(w, 2, &f.comments)?;
+
+                                let field_type = match f.type_override(SupportedLanguage::Swift) {
+                                    Some(type_override) => type_override.to_owned(),
+                                    None => self
+                                        .format_type(&f.ty, e.shared().generic_types.as_slice())
+                                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                                };
+
+                                // Use var instead of let to match existing coding style
+                                writeln!(
+                                    w,
+                                    "\t\tpublic var {}: {}{}",
+                                    remove_dash_from_identifier(
+                                        swift_keyword_aware_rename(&f.id.renamed).as_ref()
+                                    ),
+                                    field_type,
+                                    (f.has_default && !f.ty.is_optional())
+                                        .then_some("?")
+                                        .unwrap_or_default()
+                                )?;
+                            }
+
+                            // Add initializer for the inner struct
+                            writeln!(w, "\t\t")?;
+                            let mut init_params: Vec<String> = Vec::new();
+
+                            for f in fields {
+                                let field_type = match f.type_override(SupportedLanguage::Swift) {
+                                    Some(type_override) => type_override.to_owned(),
+                                    None => self
+                                        .format_type(&f.ty, e.shared().generic_types.as_slice())
+                                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+                                };
+
+                                init_params.push(format!(
+                                    "{}: {}{}",
+                                    remove_dash_from_identifier(&f.id.renamed),
+                                    field_type,
+                                    (f.has_default && !f.ty.is_optional())
+                                        .then_some("?")
+                                        .unwrap_or_default()
+                                ));
+                            }
+
+                            write!(w, "\t\tpublic init({}) {{", init_params.join(", "))?;
+
+                            for f in fields {
+                                write!(
+                                    w,
+                                    "\n\t\t\tself.{} = {}",
+                                    remove_dash_from_identifier(&f.id.renamed),
+                                    remove_dash_from_identifier(
+                                        swift_keyword_aware_rename(&f.id.renamed).as_ref()
+                                    )
+                                )?;
+                            }
+
+                            writeln!(w, "\n\t\t}}")?;
+                            writeln!(w, "\t}}")?;
+                        }
+                    }
+                }
+
+                // Add CodingKeys enum
+                writeln!(w, "\n\tprivate enum CodingKeys: String, CodingKey {{")?;
+                writeln!(w, "\t\tcase type")?;
+                writeln!(w, "\t}}")?;
+
+                // Add TypeKeys enum for variant names
+                writeln!(w, "\n\tprivate enum TypeKeys: String, CodingKey {{")?;
+                writeln!(w, "\t\tcase {}", type_keys.join("\n\t\tcase "))?;
+                writeln!(w, "\t}}")?;
+
+                // Add custom decoder implementation
+                writeln!(w, "\n\tpublic init(from decoder: Decoder) throws {{")?;
+
+                // First try to decode unit variants as strings
+                writeln!(
+                    w,
+                    "\t\tlet container = try decoder.container(keyedBy: CodingKeys.self)"
+                )?;
+                writeln!(
+                    w,
+                    "\t\tif let type = try? container.decodeNil(forKey: .type) {{"
+                )?;
+
+                // Handle nil case (special case for the first unit variant)
+                if !shared.variants.is_empty() {
+                    if let RustEnumVariant::Unit(unit_shared) = &shared.variants[0] {
+                        writeln!(
+                            w,
+                            "\t\t\tself = .{}\n\t\t\treturn",
+                            swift_keyword_aware_rename(&unit_shared.id.original.to_camel_case())
+                        )?;
+                    }
+                }
+                writeln!(w, "\t\t}}")?;
+
+                // Try single value container for unit variants
+                writeln!(w, "\t\t")?;
+                writeln!(w, "\t\tlet type = try decoder.singleValueContainer()")?;
+                writeln!(w, "\t\t")?;
+                writeln!(w, "\t\tif let value = try? type.decode(String.self) {{")?;
+
+                // Check for unit variants
+                let mut first_unit = true;
+                for v in &shared.variants {
+                    if let RustEnumVariant::Unit(unit_shared) = v {
+                        if first_unit {
+                            writeln!(w, "\t\t\tif value == \"{}\" {{", unit_shared.id.renamed)?;
+                            first_unit = false;
+                        } else {
+                            writeln!(
+                                w,
+                                "\t\t\telse if value == \"{}\" {{",
+                                unit_shared.id.renamed
+                            )?;
+                        }
+
+                        writeln!(
+                            w,
+                            "\t\t\t\tself = .{}\n\t\t\t\treturn",
+                            swift_keyword_aware_rename(&unit_shared.id.original.to_camel_case())
+                        )?;
+                        writeln!(w, "\t\t\t}}")?;
+                    }
+                }
+
+                writeln!(w, "\t\t}}")?;
+
+                // Try nested containers for tuple and struct variants
+                writeln!(w, "\t\t")?;
+                writeln!(w, "\t\tif let nestedContainer = try? decoder.container(keyedBy: TypeKeys.self) {{")?;
+
+                // Group tuple variants together
+                for v in &shared.variants {
+                    if let RustEnumVariant::Unit(_) = v {
+                        // Already handled above
+                        continue;
+                    }
+
+                    match v {
+                        RustEnumVariant::Tuple { ty, shared } => {
+                            let variant_name = shared.id.original.to_camel_case();
+                            let case_type = self
+                                .format_type(ty, e.shared().generic_types.as_slice())
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+                            let is_optional = ty.is_optional();
+                            let optional_suffix = if is_optional { "?" } else { "" };
+
+                            writeln!(
+                                w,
+                                "\t\t\tif let value = try? nestedContainer.decode({}{}.self, forKey: .{}) {{",
+                                swift_keyword_aware_rename(&case_type),
+                                optional_suffix,
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+
+                            writeln!(
+                                w,
+                                "\t\t\t\tself = .{}(value)\n\t\t\t\treturn",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+
+                            writeln!(w, "\t\t\t}}")?;
+                        }
+                        RustEnumVariant::AnonymousStruct { shared, .. } => {
+                            let variant_name = shared.id.original.to_camel_case();
+
+                            writeln!(
+                                w,
+                                "\t\t\tif let value = try? nestedContainer.decode(Struct.self, forKey: .{}) {{",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+
+                            writeln!(
+                                w,
+                                "\t\t\t\tself = .{}(value)\n\t\t\t\treturn",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+
+                            writeln!(w, "\t\t\t}}")?;
+                        }
+                        _ => {}
+                    }
+                }
+
+                writeln!(w, "\t\t}}")?;
+
+                // Add error handling for failed decoding
+                let enum_name =
+                    swift_keyword_aware_rename(format!("{}{}", self.prefix, shared.id.renamed));
+                writeln!(w, "\t\t")?;
+                writeln!(
+                    w,
+                    "\t\tthrow DecodingError.dataCorrupted(\n\t\t\tDecodingError.Context(\n\t\t\t\tcodingPath: decoder.codingPath,\n\t\t\t\tdebugDescription: \"Unable to decode {}\"\n\t\t\t)\n\t\t)",
+                    enum_name
+                )?;
+
+                writeln!(w, "\t}}")?;
+
+                // Add custom encoder implementation
+                writeln!(w, "\t")?;
+                writeln!(w, "\tpublic func encode(to encoder: Encoder) throws {{")?;
+                writeln!(w, "\t\tvar container: KeyedEncodingContainer<TypeKeys>")?;
+                writeln!(w, "\t\t")?;
+                writeln!(w, "\t\tswitch self {{")?;
+
+                // Handle each variant's encoding
+                for v in &shared.variants {
+                    match v {
+                        RustEnumVariant::Unit(unit_shared) => {
+                            let variant_name = unit_shared.id.original.to_camel_case();
+                            writeln!(
+                                w,
+                                "\t\tcase .{}:",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+                            writeln!(w, "\t\t\tvar container = encoder.singleValueContainer()")?;
+                            // For unit variants, we need to encode as a string and return if not the last variant
+                            let is_last_variant = v == shared.variants.last().unwrap();
+                            writeln!(
+                                w,
+                                "\t\t\ttry container.encode(\"{}\"){}",
+                                unit_shared.id.renamed,
+                                if !is_last_variant {
+                                    "\n\t\t\treturn"
+                                } else {
+                                    ""
+                                }
+                            )?;
+                        }
+                        RustEnumVariant::Tuple { shared, .. } => {
+                            let variant_name = shared.id.original.to_camel_case();
+                            writeln!(
+                                w,
+                                "\t\tcase .{}(let value):",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+                            writeln!(
+                                w,
+                                "\t\t\tcontainer = encoder.container(keyedBy: TypeKeys.self)"
+                            )?;
+                            writeln!(
+                                w,
+                                "\t\t\ttry container.encode(value, forKey: .{})",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+                        }
+                        RustEnumVariant::AnonymousStruct { shared, .. } => {
+                            let variant_name = shared.id.original.to_camel_case();
+                            writeln!(
+                                w,
+                                "\t\tcase .{}(let value):",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+                            writeln!(
+                                w,
+                                "\t\t\tcontainer = encoder.container(keyedBy: TypeKeys.self)"
+                            )?;
+                            writeln!(
+                                w,
+                                "\t\t\ttry container.encode(value, forKey: .{})",
+                                swift_keyword_aware_rename(&variant_name)
+                            )?;
+                        }
+                    }
+                }
+
+                writeln!(w, "\t\t}}")?;
+                writeln!(w, "\t}}")?;
             }
             RustEnum::Unit(shared) => {
                 for v in &shared.variants {
